@@ -308,12 +308,17 @@ func (a *SlackApp) commands(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (a *SlackApp) index(res http.ResponseWriter, req *http.Request) {
+	Response(&SlackContext{Res: res}, http.StatusOK, nil, nil)
+}
+
 // ServeApp - Listen and Serve App on desired port, callback can be nil
 func (a *SlackApp) ServeApp(port uint16, cb func()) {
 	if len(a.opts.Prefix) == 0 {
 		panic(fmt.Sprintf("\x1b[31m%s\x1b[0m\n", "Slack App Route Prefix Cannot Be Empty"))
 	}
 	a.server = &http.Server{Addr: fmt.Sprintf(":%d", port)}
+	http.HandleFunc("/", a.index)
 	http.HandleFunc(fmt.Sprintf("/%s/install", a.opts.Prefix), a.appInstall)
 	http.HandleFunc(fmt.Sprintf("/%s/commands", a.opts.Prefix), a.commands)
 	http.HandleFunc(fmt.Sprintf("/%s/", a.opts.Prefix), a.interactions)
