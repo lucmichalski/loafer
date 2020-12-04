@@ -167,9 +167,11 @@ func (a *SlackApp) appInstall(res http.ResponseWriter, req *http.Request) {
 		if !avoidDefaultPage {
 			Response(&SlackContext{Res: res}, http.StatusOK, []byte(strings.Replace(INSTALLSUCCESSPAGE, "{{APP_NAME}}", a.opts.Name, -1)), map[string]string{
 				"Content-Type": "text/html; charset=utf-8"})
+			return
 		}
 	} else {
 		Response(&SlackContext{Res: res}, http.StatusInternalServerError, []byte("Slack App Access Request is not Ok"), nil)
+		return
 	}
 }
 
@@ -192,21 +194,25 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 	bodyText, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Invalid Body"), nil)
+		return
 	}
 	defer req.Body.Close()
 	queries, err := url.ParseQuery(string(bodyText))
 	if err != nil {
 		Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Invalid Form Body"), nil)
+		return
 	}
 	isAuthorizedCaller := a.checkSlackSecret(req.Header.Get("X-Slack-Signature"), req.Header.Get("X-Slack-Request-TimeStamp"), string(bodyText))
 	if isAuthorizedCaller {
 		err = json.Unmarshal([]byte(queries.Get("payload")), &event)
 		if err != nil {
 			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Invalid JSON format"), nil)
+			return
 		}
 		accessToken := findTokenForWorkspace(&a.opts.Tokens, event.Team.ID)
 		if accessToken == nil {
-			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Unrecognized workspace"), nil)
+			fmt.Printf("App not installed for workspace: %s\n", queries.Get("team_id"))
+			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("App not installed for workspace"), nil)
 			return
 		}
 		ctx := &SlackContext{
@@ -222,6 +228,7 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			} else {
 				fmt.Printf("Unrecognized shortcut: %s\n", callbackID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized shortcut callback_id"), nil)
+				return
 			}
 		case "block_actions":
 			action := event.Actions[0]
@@ -230,6 +237,7 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			} else {
 				fmt.Printf("Unrecognized action: %s\n", action.ActionID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized action action_id"), nil)
+				return
 			}
 			break
 		case "view_submission":
@@ -238,6 +246,7 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			} else {
 				fmt.Printf("Unrecognized submission event from view: %s\n", event.View.CallbackID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized view submission callback_id"), nil)
+				return
 			}
 		case "view_closed":
 			if handler, ok := a.closeListeners[event.View.CallbackID]; ok {
@@ -245,12 +254,14 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			} else {
 				fmt.Printf("Unrecognized closed event from view: %s\n", event.View.CallbackID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized view closed callback_id"), nil)
+				return
 			}
 		default:
 			Response(ctx, http.StatusBadRequest, []byte("Unrecognized interaction type"), nil)
 		}
 	} else {
 		Response(&SlackContext{Res: res}, http.StatusUnauthorized, []byte("Unauthorized"), nil)
+		return
 	}
 }
 
@@ -259,15 +270,22 @@ func (a *SlackApp) commands(res http.ResponseWriter, req *http.Request) {
 	bodyText, err := ioutil.ReadAll(req.Body)
 	if err != nil {
 		Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Invalid Body"), nil)
+		return
 	}
 	defer req.Body.Close()
 	queries, err := url.ParseQuery(string(bodyText))
 	if err != nil {
 		Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Invalid Form Body"), nil)
+		return
 	}
 	isAuthorizedCaller := a.checkSlackSecret(req.Header.Get("X-Slack-Signature"), req.Header.Get("X-Slack-Request-TimeStamp"), string(bodyText))
 	if isAuthorizedCaller {
 		accessToken := findTokenForWorkspace(&a.opts.Tokens, queries.Get("team_id"))
+		if accessToken == nil {
+			fmt.Printf("App not installed for workspace: %s\n", queries.Get("team_id"))
+			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("App not installed for workspace"), nil)
+			return
+		}
 		ctx := &SlackContext{
 			Body:  bodyText,
 			Token: accessToken.Token,
@@ -282,9 +300,11 @@ func (a *SlackApp) commands(res http.ResponseWriter, req *http.Request) {
 		} else {
 			fmt.Printf("Unrecognized command: %s\n", queries.Get("command"))
 			Response(ctx, http.StatusBadRequest, []byte("Unrecognized command"), nil)
+			return
 		}
 	} else {
 		Response(&SlackContext{Res: res}, http.StatusUnauthorized, []byte("Unauthorized"), nil)
+		return
 	}
 }
 
