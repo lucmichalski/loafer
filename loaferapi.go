@@ -87,9 +87,9 @@ func slackUserCall(uri string, token string) SlackUser {
 }
 
 // slackMessageCall - Calls Slack Chat.PostMessage API
-func slackMessageCall(form url.Values, token string) bool {
+func slackMessageCall(uri string, form url.Values, token string) bool {
 	client := &http.Client{}
-	r, err := http.NewRequest("POST", "https://slack.com/api/chat.update", strings.NewReader(form.Encode()))
+	r, err := http.NewRequest("POST", uri, strings.NewReader(form.Encode()))
 	if err != nil {
 		return false
 	}
@@ -184,7 +184,7 @@ func FindUserByEmail(email string, token string) SlackUser {
 
 // FindUserByID - Finding slack user by id
 func FindUserByID(id string, token string) SlackUser {
-	foundUser := slackUserCall(fmt.Sprintf("https://slack.com/api/users.lookupByEmail?user=%s&token=%s", id, token), token)
+	foundUser := slackUserCall(fmt.Sprintf("https://slack.com/api/users.info?user=%s&token=%s", id, token), token)
 	return foundUser
 }
 
@@ -201,9 +201,11 @@ func UpdateMessage(channel string, ts string, blocks ISlackBlockKitUI, text stri
 	form := url.Values{}
 	form.Set("channel", channel)
 	form.Set("ts", ts)
-	form.Set("blocks", string(jsonBlocks))
+	if blocks != nil {
+		form.Set("blocks", string(jsonBlocks))
+	}
 	form.Set("text", text)
-	res := slackMessageCall(form, token)
+	res := slackMessageCall("https://slack.com/api/chat.update", form, token)
 	return res
 }
 
@@ -219,8 +221,40 @@ func PostMessage(channel string, blocks ISlackBlockKitUI, text string, token str
 	}
 	form := url.Values{}
 	form.Set("channel", channel)
-	form.Set("blocks", string(jsonBlocks))
+	if blocks != nil {
+		form.Set("blocks", string(jsonBlocks))
+	}
 	form.Set("text", text)
-	res := slackMessageCall(form, token)
+	res := slackMessageCall("https://slack.com/api/chat.postMessage", form, token)
 	return res
+}
+
+// FileUpload - Upload a file
+func FileUpload(channels []string, filename string, content string, filetype string, token string) error {
+	form := url.Values{}
+	form.Set("content", content)
+	form.Set("filename", filename)
+	form.Set("filetype", filetype)
+	form.Set("channels", strings.Join(channels, ","))
+	client := &http.Client{}
+	r, err := http.NewRequest("POST", "https://slack.com/api/files.upload", strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	resp, err := client.Do(r)
+	if err != nil {
+		return err
+	}
+	text, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	defer client.CloseIdleConnections()
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(text), "\"ok\":true") {
+		return err
+	}
+	return nil
 }

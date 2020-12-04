@@ -220,6 +220,7 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			if handler, ok := a.shortcutListeners[callbackID]; ok {
 				handler(ctx)
 			} else {
+				fmt.Printf("Unrecognized shortcut: %s\n", callbackID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized shortcut callback_id"), nil)
 			}
 		case "block_actions":
@@ -227,6 +228,7 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			if handler, ok := a.actionListeners[action.ActionID]; ok {
 				handler(ctx)
 			} else {
+				fmt.Printf("Unrecognized action: %s\n", action.ActionID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized action action_id"), nil)
 			}
 			break
@@ -234,12 +236,14 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			if handler, ok := a.submitListeners[event.View.CallbackID]; ok {
 				handler(ctx)
 			} else {
+				fmt.Printf("Unrecognized submission event from view: %s\n", event.View.CallbackID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized view submission callback_id"), nil)
 			}
 		case "view_closed":
 			if handler, ok := a.closeListeners[event.View.CallbackID]; ok {
 				handler(ctx)
 			} else {
+				fmt.Printf("Unrecognized closed event from view: %s\n", event.View.CallbackID)
 				Response(ctx, http.StatusBadRequest, []byte("Unrecognized view closed callback_id"), nil)
 			}
 		default:
@@ -276,6 +280,7 @@ func (a *SlackApp) commands(res http.ResponseWriter, req *http.Request) {
 		if handler, ok := a.cmds[queries.Get("command")]; ok {
 			handler(ctx)
 		} else {
+			fmt.Printf("Unrecognized command: %s\n", queries.Get("command"))
 			Response(ctx, http.StatusBadRequest, []byte("Unrecognized command"), nil)
 		}
 	} else {
@@ -345,4 +350,17 @@ func Response(ctx *SlackContext, code int, message []byte, headers map[string]st
 	}
 	ctx.Res.WriteHeader(code)
 	ctx.Res.Write(message)
+}
+
+// ConvertState - Convert unknown state to struct
+func ConvertState(state ISlackBlockKitUI, dst interface{}) error {
+	jsonView, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(jsonView, dst)
+	if err != nil {
+		return err
+	}
+	return nil
 }
