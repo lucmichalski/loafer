@@ -33,12 +33,12 @@ type SlackAuthToken struct {
 
 // SlackAppOptions - Slack App options
 type SlackAppOptions struct {
-	Name          string           // Slack App name
-	Prefix        string           // Prefix of routes
-	Tokens        []SlackAuthToken // List of available workspace tokens
-	ClientSecret  string           // App client secret
-	ClientID      string           // App client id
-	SigningSecret string           // Signning secret
+	Name          string                                  // Slack App name
+	Prefix        string                                  // Prefix of routes
+	TokensCache   func(workspace string) []SlackAuthToken // List of available workspace tokens
+	ClientSecret  string                                  // App client secret
+	ClientID      string                                  // App client id
+	SigningSecret string                                  // Signning secret
 }
 
 // SlackContext - Slack request context
@@ -74,16 +74,6 @@ type SlackOauth2Response struct {
 	Team        SlackOauth2Team `json:"team"`
 	Enterprise  SlackOauth2Team `json:"enterprise"`
 	AuthedUser  SlackOauth2User `json:"authed_user"`
-}
-
-// SetTokens - Set token list
-func (a *SlackApp) SetTokens(tokens []SlackAuthToken) {
-	a.opts.Tokens = tokens
-}
-
-// AddToken - Add token to list
-func (a *SlackApp) AddToken(token SlackAuthToken) {
-	a.opts.Tokens = append(a.opts.Tokens, token)
 }
 
 // OnCommand - Add handler to command
@@ -159,9 +149,6 @@ func (a *SlackApp) appInstall(res http.ResponseWriter, req *http.Request) {
 	if installResponse.Ok {
 		avoidDefaultPage := false
 		if a.distCB != nil {
-			a.AddToken(SlackAuthToken{
-				Workspace: installResponse.Team.ID,
-				Token:     installResponse.AccessToken})
 			avoidDefaultPage = a.distCB(&installResponse, res, req)
 		}
 		if !avoidDefaultPage {
@@ -209,7 +196,7 @@ func (a *SlackApp) interactions(res http.ResponseWriter, req *http.Request) {
 			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("Invalid JSON format"), nil)
 			return
 		}
-		accessToken := findTokenForWorkspace(&a.opts.Tokens, event.Team.ID)
+		accessToken := a.findTokenForWorkspace(event.Team.ID)
 		if accessToken == nil {
 			fmt.Printf("App not installed for workspace: %s\n", queries.Get("team_id"))
 			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("App not installed for workspace"), nil)
@@ -280,7 +267,7 @@ func (a *SlackApp) commands(res http.ResponseWriter, req *http.Request) {
 	}
 	isAuthorizedCaller := a.checkSlackSecret(req.Header.Get("X-Slack-Signature"), req.Header.Get("X-Slack-Request-TimeStamp"), string(bodyText))
 	if isAuthorizedCaller {
-		accessToken := findTokenForWorkspace(&a.opts.Tokens, queries.Get("team_id"))
+		accessToken := a.findTokenForWorkspace(queries.Get("team_id"))
 		if accessToken == nil {
 			fmt.Printf("App not installed for workspace: %s\n", queries.Get("team_id"))
 			Response(&SlackContext{Res: res}, http.StatusBadRequest, []byte("App not installed for workspace"), nil)
@@ -342,7 +329,7 @@ func InitializeSlackApp(opts *SlackAppOptions) SlackApp {
 	app := SlackApp{
 		opts: SlackAppOptions{
 			Name:          opts.Name,
-			Tokens:        opts.Tokens,
+			TokensCache:   opts.TokensCache,
 			Prefix:        opts.Prefix,
 			ClientSecret:  opts.ClientSecret,
 			ClientID:      opts.ClientID,
@@ -357,9 +344,10 @@ func InitializeSlackApp(opts *SlackAppOptions) SlackApp {
 }
 
 // findTokenForWorkspace - Finding the token for the corresponding workspace
-func findTokenForWorkspace(tokens *[]SlackAuthToken, workspace string) *SlackAuthToken {
+func (a *SlackApp) findTokenForWorkspace(workspace string) *SlackAuthToken {
+	availableTokens := a.opts.TokensCache(workspace)
 	var token *SlackAuthToken
-	for _, t := range *tokens {
+	for _, t := range availableTokens {
 		if t.Workspace == workspace {
 			token = &t
 			break
