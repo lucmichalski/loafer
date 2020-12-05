@@ -138,6 +138,7 @@ func OpenView(view SlackModal, triggerID string, token string) bool {
 		return false
 	}
 	if !strings.Contains(string(text), "\"ok\":true") {
+		fmt.Println(string(text))
 		return false
 	}
 	return true
